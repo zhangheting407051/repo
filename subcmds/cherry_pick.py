@@ -13,9 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-import re
-import sys
+import sys, re, string, random, os
 from command import Command
 from git_command import GitCommand
 
@@ -47,13 +45,13 @@ change id will be added.
                    capture_stdout = True,
                    capture_stderr = True)
     if p.Wait() != 0:
-      print(p.stderr, file=sys.stderr)
+      print >>sys.stderr, p.stderr
       sys.exit(1)
     sha1 = p.stdout.strip()
 
     p = GitCommand(None, ['cat-file', 'commit', sha1], capture_stdout=True)
     if p.Wait() != 0:
-      print("error: Failed to retrieve old commit message", file=sys.stderr)
+      print >>sys.stderr, "error: Failed to retrieve old commit message"
       sys.exit(1)
     old_msg = self._StripHeader(p.stdout)
 
@@ -63,8 +61,8 @@ change id will be added.
                    capture_stderr = True)
     status = p.Wait()
 
-    print(p.stdout, file=sys.stdout)
-    print(p.stderr, file=sys.stderr)
+    print >>sys.stdout, p.stdout
+    print >>sys.stderr, p.stderr
 
     if status == 0:
       # The cherry-pick was applied correctly. We just need to edit the
@@ -76,16 +74,17 @@ change id will be added.
                      capture_stdout = True,
                      capture_stderr = True)
       p.stdin.write(new_msg)
-      p.stdin.close()
       if p.Wait() != 0:
-        print("error: Failed to update commit message", file=sys.stderr)
+        print >>sys.stderr, "error: Failed to update commit message"
         sys.exit(1)
 
     else:
-      print('NOTE: When committing (please see above) and editing the commit '
-            'message, please remove the old Change-Id-line and add:')
-      print(self._GetReference(sha1), file=sys.stderr)
-      print(file=sys.stderr)
+      print >>sys.stderr, """\
+NOTE: When committing (please see above) and editing the commit message,
+please remove the old Change-Id-line and add:
+"""
+      print >>sys.stderr, self._GetReference(sha1)
+      print >>sys.stderr
 
   def _IsChangeId(self, line):
     return CHANGE_ID_RE.match(line)

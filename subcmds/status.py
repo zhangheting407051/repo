@@ -20,12 +20,9 @@ try:
 except ImportError:
   import dummy_threading as _threading
 
-import glob
-
 import itertools
-import os
-
-from color import Coloring
+import sys
+import StringIO
 
 class Status(PagedCommand):
   common = True
@@ -41,13 +38,6 @@ is a difference between these three states.
 
 The -j/--jobs option can be used to run multiple status queries
 in parallel.
-
-The -o/--orphans option can be used to show objects that are in
-the working directory, but not associated with a repo project.
-This includes unmanaged top-level files and directories, but also
-includes deeper items.  For example, if dir/subdir/proj1 and
-dir/subdir/proj2 are repo projects, dir/subdir/proj3 will be shown
-if it is not known to repo.
 
 Status Display
 --------------
@@ -86,13 +76,8 @@ the following meanings:
     p.add_option('-j', '--jobs',
                  dest='jobs', action='store', type='int', default=2,
                  help="number of projects to check simultaneously")
-    p.add_option('-o', '--orphans',
-                 dest='orphans', action='store_true',
-                 help="include objects in working directory outside of repo projects")
-    p.add_option('-q', '--quiet', action='store_true',
-                 help="only print the name of modified projects")
 
-  def _StatusHelper(self, project, clean_counter, sem, quiet):
+  def _StatusHelper(self, project, clean_counter, sem, output):
     """Obtains the status for a specific project.
 
     Obtains the status for a project, redirecting the output to
@@ -106,89 +91,47 @@ the following meanings:
       output: Where to output the status.
     """
     try:
-      state = project.PrintWorkTreeStatus(quiet=quiet)
+      state = project.PrintWorkTreeStatus(output)
       if state == 'CLEAN':
-        next(clean_counter)
+        clean_counter.next()
     finally:
       sem.release()
 
-  def _FindOrphans(self, dirs, proj_dirs, proj_dirs_parents, outstring):
-    """find 'dirs' that are present in 'proj_dirs_parents' but not in 'proj_dirs'"""
-    status_header = ' --\t'
-    for item in dirs:
-      if not os.path.isdir(item):
-        outstring.append(''.join([status_header, item]))
-        continue
-      if item in proj_dirs:
-        continue
-      if item in proj_dirs_parents:
-        self._FindOrphans(glob.glob('%s/.*' % item) +
-            glob.glob('%s/*' % item),
-            proj_dirs, proj_dirs_parents, outstring)
-        continue
-      outstring.append(''.join([status_header, item, '/']))
-
   def Execute(self, opt, args):
-    all_projects = self.GetProjects(args)
+    all = self.GetProjects(args)
     counter = itertools.count()
 
+    on = {}
+    for project in all:
+      cb = project.CurrentBranch
+      if cb:
+        if cb not in on:
+          on[cb] = []
+        on[cb].append(project)
+
+    branch_names = list(on.keys())
+    branch_names.sort()
+    for cb in branch_names:
+      print '# on branch %s' % cb
+
     if opt.jobs == 1:
-      for project in all_projects:
-        state = project.PrintWorkTreeStatus(quiet=opt.quiet)
+      for project in all:
+        state = project.PrintWorkTreeStatus()
         if state == 'CLEAN':
-          next(counter)
+          counter.next()
     else:
       sem = _threading.Semaphore(opt.jobs)
-      threads = []
-      for project in all_projects:
+      threads_and_output = []
+      for project in all:
         sem.acquire()
-
+        output = StringIO.StringIO()
         t = _threading.Thread(target=self._StatusHelper,
-                              args=(project, counter, sem, opt.quiet))
-        threads.append(t)
-        t.daemon = True
+                              args=(project, counter, sem, output))
+        threads_and_output.append((t, output))
         t.start()
-      for t in threads:
+      for (t, output) in threads_and_output:
         t.join()
-    if not opt.quiet and len(all_projects) == next(counter):
-      print('nothing to commit (working directory clean)')
-
-    if opt.orphans:
-      proj_dirs = set()
-      proj_dirs_parents = set()
-      for project in self.GetProjects(None, missing_ok=True):
-        proj_dirs.add(project.relpath)
-        (head, _tail) = os.path.split(project.relpath)
-        while head != "":
-          proj_dirs_parents.add(head)
-          (head, _tail) = os.path.split(head)
-      proj_dirs.add('.repo')
-
-      class StatusColoring(Coloring):
-        def __init__(self, config):
-          Coloring.__init__(self, config, 'status')
-          self.project = self.printer('header', attr = 'bold')
-          self.untracked = self.printer('untracked', fg = 'red')
-
-      orig_path = os.getcwd()
-      try:
-        os.chdir(self.manifest.topdir)
-
-        outstring = []
-        self._FindOrphans(glob.glob('.*') +
-            glob.glob('*'),
-            proj_dirs, proj_dirs_parents, outstring)
-
-        if outstring:
-          output = StatusColoring(self.manifest.globalConfig)
-          output.project('Objects not within a project (orphans)')
-          output.nl()
-          for entry in outstring:
-            output.untracked(entry)
-            output.nl()
-        else:
-          print('No orphan files or directories')
-
-      finally:
-        # Restore CWD.
-        os.chdir(orig_path)
+        sys.stdout.write(output.getvalue())
+        output.close()
+    if len(all) == counter.next():
+      print 'nothing to commit (working directory clean)'

@@ -13,14 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
 import re
 import sys
 from formatter import AbstractFormatter, DumbWriter
 
 from color import Coloring
-from command import PagedCommand, MirrorSafeCommand, GitcAvailableCommand, GitcClientCommand
-import gitc_utils
+from command import PagedCommand, MirrorSafeCommand
 
 class Help(PagedCommand, MirrorSafeCommand):
   common = False
@@ -33,9 +31,12 @@ Displays detailed usage information about a command.
 """
 
   def _PrintAllCommands(self):
-    print('usage: repo COMMAND [ARGS]')
-    print('The complete list of recognized repo commands are:')
-    commandNames = list(sorted(self.commands))
+    print 'usage: repo COMMAND [ARGS]'
+    print """
+The complete list of recognized repo commands are:
+"""
+    commandNames = self.commands.keys()
+    commandNames.sort()
 
     maxlen = 0
     for name in commandNames:
@@ -48,28 +49,20 @@ Displays detailed usage information about a command.
         summary = command.helpSummary.strip()
       except AttributeError:
         summary = ''
-      print(fmt % (name, summary))
-    print("See 'repo help <command>' for more information on a "
-          'specific command.')
+      print fmt % (name, summary)
+    print """
+See 'repo help <command>' for more information on a specific command.
+"""
 
   def _PrintCommonCommands(self):
-    print('usage: repo COMMAND [ARGS]')
-    print('The most commonly used repo commands are:')
-
-    def gitc_supported(cmd):
-      if not isinstance(cmd, GitcAvailableCommand) and not isinstance(cmd, GitcClientCommand):
-        return True
-      if self.manifest.isGitcClient:
-        return True
-      if isinstance(cmd, GitcClientCommand):
-        return False
-      if gitc_utils.get_gitc_manifest_dir():
-        return True
-      return False
-
-    commandNames = list(sorted([name
-                    for name, command in self.commands.items()
-                    if command.common and gitc_supported(command)]))
+    print 'usage: repo COMMAND [ARGS]'
+    print """
+The most commonly used repo commands are:
+"""
+    commandNames = [name 
+                    for name in self.commands.keys()
+                    if self.commands[name].common]
+    commandNames.sort()
 
     maxlen = 0
     for name in commandNames:
@@ -82,10 +75,11 @@ Displays detailed usage information about a command.
         summary = command.helpSummary.strip()
       except AttributeError:
         summary = ''
-      print(fmt % (name, summary))
-    print(
-"See 'repo help <command>' for more information on a specific command.\n"
-"See 'repo help --all' for a complete list of recognized commands.")
+      print fmt % (name, summary)
+    print """
+See 'repo help <command>' for more information on a specific command.
+See 'repo help --all' for a complete list of recognized commands.
+"""
 
   def _PrintCommandHelp(self, cmd):
     class _Out(Coloring):
@@ -126,8 +120,8 @@ Displays detailed usage information about a command.
           m = asciidoc_hdr.match(para)
           if m:
             title = m.group(1)
-            section_type = m.group(2)
-            if section_type[0] in ('=', '-'):
+            type = m.group(2)
+            if type[0] in ('=', '-'):
               p = self.heading
             else:
               def _p(fmt, *args):
@@ -137,7 +131,7 @@ Displays detailed usage information about a command.
 
             p('%s', title)
             self.nl()
-            p('%s', ''.ljust(len(title), section_type[0]))
+            p('%s', ''.ljust(len(title),type[0]))
             self.nl()
             continue
 
@@ -168,10 +162,9 @@ Displays detailed usage information about a command.
       try:
         cmd = self.commands[name]
       except KeyError:
-        print("repo: '%s' is not a repo command." % name, file=sys.stderr)
+        print >>sys.stderr, "repo: '%s' is not a repo command." % name
         sys.exit(1)
 
-      cmd.manifest = self.manifest
       self._PrintCommandHelp(cmd)
 
     else:

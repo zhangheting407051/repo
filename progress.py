@@ -21,14 +21,13 @@ from trace import IsTrace
 _NOT_TTY = not os.isatty(2)
 
 class Progress(object):
-  def __init__(self, title, total=0, units=''):
+  def __init__(self, title, total=0):
     self._title = title
     self._total = total
     self._done = 0
     self._lastp = -1
     self._start = time()
     self._show = False
-    self._units = units
 
   def update(self, inc=1):
     self._done += inc
@@ -52,11 +51,11 @@ class Progress(object):
 
       if self._lastp != p:
         self._lastp = p
-        sys.stderr.write('\r%s: %3d%% (%d%s/%d%s)  ' % (
+        sys.stderr.write('\r%s: %3d%% (%d/%d)  ' % (
           self._title,
           p,
-          self._done, self._units,
-          self._total, self._units))
+          self._done,
+          self._total))
         sys.stderr.flush()
 
   def end(self):
@@ -70,9 +69,9 @@ class Progress(object):
       sys.stderr.flush()
     else:
       p = (100 * self._done) / self._total
-      sys.stderr.write('\r%s: %3d%% (%d%s/%d%s), done.  \n' % (
+      sys.stderr.write('\r%s: %3d%% (%d/%d), done.  \n' % (
         self._title,
         p,
-        self._done, self._units,
-        self._total, self._units))
+        self._done,
+        self._total))
       sys.stderr.flush()

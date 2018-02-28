@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import os
+import sys
 from trace import Trace
 
 HEAD    = 'HEAD'
@@ -66,7 +67,7 @@ class GitRefs(object):
   def _NeedUpdate(self):
     Trace(': scan refs %s', self._gitdir)
 
-    for name, mtime in self._mtime.items():
+    for name, mtime in self._mtime.iteritems():
       try:
         if mtime != os.path.getmtime(os.path.join(self._gitdir, name)):
           return True
@@ -89,7 +90,7 @@ class GitRefs(object):
     attempts = 0
     while scan and attempts < 5:
       scan_next = {}
-      for name, dest in scan.items():
+      for name, dest in scan.iteritems():
         if dest in self._phyref:
           self._phyref[name] = self._phyref[dest]
         else:
@@ -100,7 +101,7 @@ class GitRefs(object):
   def _ReadPackedRefs(self):
     path = os.path.join(self._gitdir, 'packed-refs')
     try:
-      fd = open(path, 'r')
+      fd = open(path, 'rb')
       mtime = os.path.getmtime(path)
     except IOError:
       return
@@ -108,7 +109,6 @@ class GitRefs(object):
       return
     try:
       for line in fd:
-        line = str(line)
         if line[0] == '#':
           continue
         if line[0] == '^':
@@ -116,10 +116,10 @@ class GitRefs(object):
 
         line = line[:-1]
         p = line.split(' ')
-        ref_id = p[0]
+        id = p[0]
         name = p[1]
 
-        self._phyref[name] = ref_id
+        self._phyref[name] = id
     finally:
       fd.close()
     self._mtime['packed-refs'] = mtime
@@ -139,28 +139,22 @@ class GitRefs(object):
   def _ReadLoose1(self, path, name):
     try:
       fd = open(path, 'rb')
+      mtime = os.path.getmtime(path)
+    except OSError:
+      return
     except IOError:
       return
-
     try:
-      try:
-        mtime = os.path.getmtime(path)
-        ref_id = fd.readline()
-      except (IOError, OSError):
-        return
+      id = fd.readline()
     finally:
       fd.close()
 
-    try:
-      ref_id = ref_id.decode()
-    except AttributeError:
-      pass
-    if not ref_id:
+    if not id:
       return
-    ref_id = ref_id[:-1]
+    id = id[:-1]
 
-    if ref_id.startswith('ref: '):
-      self._symref[name] = ref_id[5:]
+    if id.startswith('ref: '):
+      self._symref[name] = id[5:]
     else:
-      self._phyref[name] = ref_id
+      self._phyref[name] = id
     self._mtime[name] = mtime

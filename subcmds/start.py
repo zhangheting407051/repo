@@ -13,16 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
-import os
 import sys
-
 from command import Command
-from git_config import IsId
 from git_command import git
-import gitc_utils
 from progress import Progress
-from project import SyncBuffer
 
 class Start(Command):
   common = True
@@ -46,7 +40,7 @@ revision specified in the manifest.
 
     nb = args[0]
     if not git.check_ref_format('heads/%s' % nb):
-      print("error: '%s' is not a valid name" % nb, file=sys.stderr)
+      print >>sys.stderr, "error: '%s' is not a valid name" % nb
       sys.exit(1)
 
     err = []
@@ -54,64 +48,21 @@ revision specified in the manifest.
     if not opt.all:
       projects = args[1:]
       if len(projects) < 1:
-        projects = ['.',]  # start it in the local project by default
+        print >>sys.stderr, "error: at least one project must be specified"
+        sys.exit(1)
 
-    all_projects = self.GetProjects(projects,
-                                    missing_ok=bool(self.gitc_manifest))
+    all = self.GetProjects(projects)
 
-    # This must happen after we find all_projects, since GetProjects may need
-    # the local directory, which will disappear once we save the GITC manifest.
-    if self.gitc_manifest:
-      gitc_projects = self.GetProjects(projects, manifest=self.gitc_manifest,
-                                       missing_ok=True)
-      for project in gitc_projects:
-        if project.old_revision:
-          project.already_synced = True
-        else:
-          project.already_synced = False
-          project.old_revision = project.revisionExpr
-        project.revisionExpr = None
-      # Save the GITC manifest.
-      gitc_utils.save_manifest(self.gitc_manifest)
-
-      # Make sure we have a valid CWD
-      if not os.path.exists(os.getcwd()):
-        os.chdir(self.manifest.topdir)
-
-    pm = Progress('Starting %s' % nb, len(all_projects))
-    for project in all_projects:
+    pm = Progress('Starting %s' % nb, len(all))
+    for project in all:
       pm.update()
-
-      if self.gitc_manifest:
-        gitc_project = self.gitc_manifest.paths[project.relpath]
-        # Sync projects that have not been opened.
-        if not gitc_project.already_synced:
-          proj_localdir = os.path.join(self.gitc_manifest.gitc_client_dir,
-                                       project.relpath)
-          project.worktree = proj_localdir
-          if not os.path.exists(proj_localdir):
-            os.makedirs(proj_localdir)
-          project.Sync_NetworkHalf()
-          sync_buf = SyncBuffer(self.manifest.manifestProject.config)
-          project.Sync_LocalHalf(sync_buf)
-          project.revisionId = gitc_project.old_revision
-
-      # If the current revision is a specific SHA1 then we can't push back
-      # to it; so substitute with dest_branch if defined, or with manifest
-      # default revision instead.
-      branch_merge = ''
-      if IsId(project.revisionExpr):
-        if project.dest_branch:
-          branch_merge = project.dest_branch
-        else:
-          branch_merge = self.manifest.default.revisionExpr
-
-      if not project.StartBranch(nb, branch_merge=branch_merge):
+      if not project.StartBranch(nb):
         err.append(project)
     pm.end()
 
     if err:
       for p in err:
-        print("error: %s/: cannot start %s" % (p.relpath, nb),
-              file=sys.stderr)
+        print >>sys.stderr,\
+          "error: %s/: cannot start %s" \
+          % (p.relpath, nb)
       sys.exit(1)

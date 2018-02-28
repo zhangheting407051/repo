@@ -13,11 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
 import sys
 
 from command import Command
 from git_command import GitCommand
+from git_refs import GitRefs, HEAD, R_HEADS, R_TAGS, R_PUB, R_M
+from error import GitError
 
 class Rebase(Command):
   common = True
@@ -51,33 +52,20 @@ branch but need to incorporate new upstream changes "underneath" them.
     p.add_option('--whitespace',
                  dest='whitespace', action='store', metavar='WS',
                  help='Pass --whitespace to git rebase')
-    p.add_option('--auto-stash',
-                 dest='auto_stash', action='store_true',
-                 help='Stash local modifications before starting')
-    p.add_option('-m', '--onto-manifest',
-                 dest='onto_manifest', action='store_true',
-                 help='Rebase onto the manifest version instead of upstream '
-                      'HEAD.  This helps to make sure the local tree stays '
-                      'consistent if you previously synced to a manifest.')
 
   def Execute(self, opt, args):
-    all_projects = self.GetProjects(args)
-    one_project = len(all_projects) == 1
+    all = self.GetProjects(args)
+    one_project = len(all) == 1
 
     if opt.interactive and not one_project:
-      print('error: interactive rebase not supported with multiple projects',
-            file=sys.stderr)
-      if len(args) == 1:
-        print('note: project %s is mapped to more than one path' % (args[0],),
-            file=sys.stderr)
+      print >>sys.stderr, 'error: interactive rebase not supported with multiple projects'
       return -1
 
-    for project in all_projects:
+    for project in all:
       cb = project.CurrentBranch
       if not cb:
         if one_project:
-          print("error: project %s has a detached HEAD" % project.relpath,
-                file=sys.stderr)
+          print >>sys.stderr, "error: project %s has a detatched HEAD" % project.relpath
           return -1
         # ignore branches with detatched HEADs
         continue
@@ -85,8 +73,7 @@ branch but need to incorporate new upstream changes "underneath" them.
       upbranch = project.GetBranch(cb)
       if not upbranch.LocalMerge:
         if one_project:
-          print("error: project %s does not track any remote branches"
-                % project.relpath, file=sys.stderr)
+          print >>sys.stderr, "error: project %s does not track any remote branches" % project.relpath
           return -1
         # ignore branches without remotes
         continue
@@ -111,32 +98,10 @@ branch but need to incorporate new upstream changes "underneath" them.
       if opt.interactive:
         args.append("-i")
 
-      if opt.onto_manifest:
-        args.append('--onto')
-        args.append(project.revisionExpr)
-
       args.append(upbranch.LocalMerge)
 
-      print('# %s: rebasing %s -> %s'
-            % (project.relpath, cb, upbranch.LocalMerge), file=sys.stderr)
-
-      needs_stash = False
-      if opt.auto_stash:
-        stash_args = ["update-index", "--refresh", "-q"]
-
-        if GitCommand(project, stash_args).Wait() != 0:
-          needs_stash = True
-          # Dirty index, requires stash...
-          stash_args = ["stash"]
-
-          if GitCommand(project, stash_args).Wait() != 0:
-            return -1
+      print >>sys.stderr, '# %s: rebasing %s -> %s' % \
+        (project.relpath, cb, upbranch.LocalMerge)
 
       if GitCommand(project, args).Wait() != 0:
         return -1
-
-      if needs_stash:
-        stash_args.append('pop')
-        stash_args.append('--quiet')
-        if GitCommand(project, stash_args).Wait() != 0:
-          return -1
